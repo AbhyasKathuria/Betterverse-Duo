@@ -1,0 +1,88 @@
+@import "tailwindcss";
+
+@theme {
+  --color-*: initial;
+  --color-blue: #2391FF;
+  --color-yellow: #FFF83F;
+  --color-amber: #FFCD54;
+  --color-pink: #F70063;
+}
+
+:root {
+  color-scheme: only light;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  border-color: #FFCD54;
+  outline-color: #FFF83F;
+  box-shadow: none;
+}
+
+html,
+body {
+  background-color: #2391FF;
+  color: #FFF83F;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.5;
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+}
+
+::selection {
+  background-color: #FFCD54;
+  color: #2391FF;
+}
+
+input,
+textarea,
+select {
+  color: #FFF83F;
+  background-color: #2391FF;
+  border-color: #FFCD54;
+  outline-color: #FFF83F;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #FFCD54;
+}
+
+button {
+  color: #2391FF;
+  background-color: #FFF83F;
+  border-color: #FFF83F;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+*:focus,
+*:focus-visible {
+  outline-style: solid;
+  outline-width: 3px;
+  outline-color: #FFF83F;
+  outline-offset: 2px;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+  background-color: #2391FF;
+}
+
+::-webkit-scrollbar-track {
+  background-color: #2391FF;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: #FFCD54;
+  border: 2px solid #2391FF;
+}
