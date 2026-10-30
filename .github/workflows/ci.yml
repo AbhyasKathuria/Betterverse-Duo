@@ -1,0 +1,39 @@
+name: Betterverse Duo CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    name: Palette, Tests & Production Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check Strict 4-Color Palette Compliance
+        run: npm run check:palette
+
+      - name: Run Unit Tests
+        run: npm test
+
+      - name: Build Next.js Production Bundle
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://vrxzivwvoayovejtwhoo.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZyeHppdnd2b2F5b3ZlanR3aG9vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMyMDM3MDQsImV4cCI6MjEwODc3OTcwNH0.UDRRfFL9kGcayK1_uYQFgfpLtWzOYX5bf-jQ2cZJnkI
+          NEXT_PUBLIC_ENABLE_GUEST: "true"
+          NEXT_PUBLIC_STUN_SERVER: stun:stun.l.google.com:19302
+        run: npm run build
