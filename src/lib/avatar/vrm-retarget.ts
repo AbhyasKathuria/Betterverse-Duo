@@ -15,9 +15,13 @@ const _q2 = new THREE.Quaternion();
 const _euler = new THREE.Euler(0, 0, 0, 'YXZ');
 const _mat4 = new THREE.Matrix4();
 
-// Default Rest Rotations
-const REST_ARM_L = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, -Math.PI * 0.38));
-const REST_ARM_R = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, Math.PI * 0.38));
+// Default Rest Rotations (VRM 1.0 base conventions)
+const REST_ARM_L_VRM1 = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, -Math.PI * 0.38));
+const REST_ARM_R_VRM1 = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, Math.PI * 0.38));
+// Default Rest Rotations (VRM 0.x conventions - inverted bone local axes)
+const REST_ARM_L_VRM0 = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, Math.PI * 0.38));
+const REST_ARM_R_VRM0 = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, -Math.PI * 0.38));
+
 const IDENTITY_QUAT = new THREE.Quaternion();
 
 // Basis transformation: converts MediaPipe camera space (Y-down, Z-into-scene) to Three.js space (Y-up, Z-towards-viewer)
@@ -30,6 +34,13 @@ const MP_TO_THREE_BASIS = new THREE.Matrix4().set(
 
 export class VRMRetargeter {
   private vrm: VRM;
+  private isVrm0: boolean;
+  private restArmL: THREE.Quaternion;
+  private restArmR: THREE.Quaternion;
+  private armLInitVec: THREE.Vector3;
+  private armRInitVec: THREE.Vector3;
+  private bendAxisL: THREE.Vector3;
+  private bendAxisR: THREE.Vector3;
 
   // Smoothing filters (1€ Filter)
   public headFilter: OneEuroFilter;
@@ -46,9 +57,9 @@ export class VRMRetargeter {
   // Current interpolated bone states (for 0.5s graceful tracking loss easing)
   private currentHeadQuat = new THREE.Quaternion();
   private currentSpineQuat = new THREE.Quaternion();
-  private currentArmL = REST_ARM_L.clone();
+  private currentArmL = new THREE.Quaternion();
   private currentForearmL = new THREE.Quaternion();
-  private currentArmR = REST_ARM_R.clone();
+  private currentArmR = new THREE.Quaternion();
   private currentForearmR = new THREE.Quaternion();
 
   // Current blendshape values (0 to 1)
@@ -64,6 +75,26 @@ export class VRMRetargeter {
 
   constructor(vrm: VRM, minCutoff = 1.0, beta = 0.007) {
     this.vrm = vrm;
+    this.isVrm0 = vrm.meta?.metaVersion === '0';
+
+    if (this.isVrm0) {
+      this.restArmL = REST_ARM_L_VRM0.clone();
+      this.restArmR = REST_ARM_R_VRM0.clone();
+      this.armLInitVec = new THREE.Vector3(-1, 0, 0);
+      this.armRInitVec = new THREE.Vector3(1, 0, 0);
+      this.bendAxisL = new THREE.Vector3(0, 0, -1);
+      this.bendAxisR = new THREE.Vector3(0, 0, 1);
+    } else {
+      this.restArmL = REST_ARM_L_VRM1.clone();
+      this.restArmR = REST_ARM_R_VRM1.clone();
+      this.armLInitVec = new THREE.Vector3(1, 0, 0);
+      this.armRInitVec = new THREE.Vector3(-1, 0, 0);
+      this.bendAxisL = new THREE.Vector3(0, 0, 1);
+      this.bendAxisR = new THREE.Vector3(0, 0, -1);
+    }
+
+    this.currentArmL.copy(this.restArmL);
+    this.currentArmR.copy(this.restArmR);
 
     this.headFilter = new OneEuroFilter({ minCutoff, beta });
     this.spineFilter = new OneEuroFilter({ minCutoff, beta });
@@ -251,18 +282,18 @@ export class VRMRetargeter {
       const w = mediapipeWorldToThree(pose[15]);
 
       _v1.set(e.x - s.x, e.y - s.y, e.z - s.z).normalize();
-      // T-pose left arm initial unit vector is (+1, 0, 0)
-      _q1.setFromUnitVectors(new THREE.Vector3(1, 0, 0), _v1);
+      // Arm initial unit vector matches VRM spec: VRM 1.0 (+1,0,0), VRM 0.x (-1,0,0)
+      _q1.setFromUnitVectors(this.armLInitVec, _v1);
       this.currentArmL.slerp(_q1, 0.35);
 
       if (leftLower && (pose[15]?.visibility ?? 0) > 0.25) {
         _v2.set(w.x - e.x, w.y - e.y, w.z - e.z).normalize();
         const bendAngle = THREE.MathUtils.clamp(_v1.angleTo(_v2), 0, THREE.MathUtils.degToRad(145));
-        _q2.setFromAxisAngle(new THREE.Vector3(0, 0, 1), bendAngle);
+        _q2.setFromAxisAngle(this.bendAxisL, bendAngle);
         this.currentForearmL.slerp(_q2, 0.35);
       }
     } else {
-      this.currentArmL.slerp(REST_ARM_L, easeRate);
+      this.currentArmL.slerp(this.restArmL, easeRate);
       this.currentForearmL.slerp(IDENTITY_QUAT, easeRate);
     }
 
@@ -281,18 +312,18 @@ export class VRMRetargeter {
       const w = mediapipeWorldToThree(pose[16]);
 
       _v1.set(e.x - s.x, e.y - s.y, e.z - s.z).normalize();
-      // T-pose right arm initial unit vector is (-1, 0, 0)
-      _q1.setFromUnitVectors(new THREE.Vector3(-1, 0, 0), _v1);
+      // Arm initial unit vector matches VRM spec: VRM 1.0 (-1,0,0), VRM 0.x (+1,0,0)
+      _q1.setFromUnitVectors(this.armRInitVec, _v1);
       this.currentArmR.slerp(_q1, 0.35);
 
       if (rightLower && (pose[16]?.visibility ?? 0) > 0.25) {
         _v2.set(w.x - e.x, w.y - e.y, w.z - e.z).normalize();
         const bendAngle = THREE.MathUtils.clamp(_v1.angleTo(_v2), 0, THREE.MathUtils.degToRad(145));
-        _q2.setFromAxisAngle(new THREE.Vector3(0, 0, -1), bendAngle);
+        _q2.setFromAxisAngle(this.bendAxisR, bendAngle);
         this.currentForearmR.slerp(_q2, 0.35);
       }
     } else {
-      this.currentArmR.slerp(REST_ARM_R, easeRate);
+      this.currentArmR.slerp(this.restArmR, easeRate);
       this.currentForearmR.slerp(IDENTITY_QUAT, easeRate);
     }
 

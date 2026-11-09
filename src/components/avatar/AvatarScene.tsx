@@ -77,6 +77,15 @@ function PaletteAuditor({ onResult }: { onResult: (stats: AuditStats) => void })
   return null;
 }
 
+function CameraSetup() {
+  const { camera } = useThree();
+  useEffect(() => {
+    camera.position.set(0, 1.25, 1.15);
+    camera.lookAt(0, 1.25, 0);
+  }, [camera]);
+  return null;
+}
+
 interface AvatarSceneProps {
   vrmUrl: string;
   trackingFrameRef: React.MutableRefObject<TrackingFrame | null>;
@@ -246,19 +255,21 @@ export default function AvatarScene({
           flat
           linear
           frameloop="always"
-          camera={{ position: [0, 1.35, 1.1], fov: 35 }}
+          camera={{ position: [0, 1.25, 1.15], fov: 35 }}
           gl={{
             antialias: false,
             powerPreference: 'high-performance',
             outputColorSpace: THREE.LinearSRGBColorSpace,
           }}
-          onCreated={({ gl, scene }) => {
+          onCreated={({ gl, scene, camera }) => {
             gl.toneMapping = THREE.NoToneMapping;
             gl.domElement.addEventListener('webglcontextlost', handleContextLost);
             scene.background = new THREE.Color(0x2391ff); // Solid Blue sky
+            camera.lookAt(0, 1.25, 0);
           }}
           className="w-full h-full block bg-blue"
         >
+          <CameraSetup />
           {isAuditMode && <PaletteAuditor onResult={setAuditStats} />}
 
           <AvatarModel

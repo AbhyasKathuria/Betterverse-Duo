@@ -15,8 +15,10 @@ interface RemoteAvatarModelProps {
   isWeakConnection?: boolean;
 }
 
-const REST_ARM_L = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, -Math.PI * 0.38));
-const REST_ARM_R = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, Math.PI * 0.38));
+const REST_ARM_L_VRM1 = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, -Math.PI * 0.38));
+const REST_ARM_R_VRM1 = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, Math.PI * 0.38));
+const REST_ARM_L_VRM0 = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, Math.PI * 0.38));
+const REST_ARM_R_VRM0 = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, -Math.PI * 0.38));
 const IDENTITY_QUAT = new THREE.Quaternion();
 
 export default function RemoteAvatarModel({
@@ -29,10 +31,12 @@ export default function RemoteAvatarModel({
   // Interpolated bone quaternions
   const currentHead = useRef(new THREE.Quaternion());
   const currentSpine = useRef(new THREE.Quaternion());
-  const currentArmL = useRef(REST_ARM_L.clone());
+  const currentArmL = useRef(REST_ARM_L_VRM1.clone());
   const currentForearmL = useRef(new THREE.Quaternion());
-  const currentArmR = useRef(REST_ARM_R.clone());
+  const currentArmR = useRef(REST_ARM_R_VRM1.clone());
   const currentForearmR = new THREE.Quaternion();
+  const restArmLRef = useRef(REST_ARM_L_VRM1);
+  const restArmRRef = useRef(REST_ARM_R_VRM1);
 
   useEffect(() => {
     let isCancelled = false;
@@ -52,6 +56,12 @@ export default function RemoteAvatarModel({
 
       loadedVrm = v;
       VRMUtils.rotateVRM0(v);
+
+      const isVrm0 = v.meta?.metaVersion === '0';
+      restArmLRef.current = isVrm0 ? REST_ARM_L_VRM0 : REST_ARM_L_VRM1;
+      restArmRRef.current = isVrm0 ? REST_ARM_R_VRM0 : REST_ARM_R_VRM1;
+      currentArmL.current.copy(restArmLRef.current);
+      currentArmR.current.copy(restArmRRef.current);
 
       // Apply remote material palette: Hair is Pink, Clothing is Yellow (swapped)
       applyPaletteMaterials(v, true);
@@ -139,9 +149,9 @@ export default function RemoteAvatarModel({
       // Ease gracefully to rest pose over 0.5s on disconnect or weak connection
       currentHead.current.slerp(IDENTITY_QUAT, easeRate);
       currentSpine.current.slerp(IDENTITY_QUAT, easeRate);
-      currentArmL.current.slerp(REST_ARM_L, easeRate);
+      currentArmL.current.slerp(restArmLRef.current, easeRate);
       currentForearmL.current.slerp(IDENTITY_QUAT, easeRate);
-      currentArmR.current.slerp(REST_ARM_R, easeRate);
+      currentArmR.current.slerp(restArmRRef.current, easeRate);
       currentForearmR.slerp(IDENTITY_QUAT, easeRate);
 
       if (humanoid) {
