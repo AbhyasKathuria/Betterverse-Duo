@@ -48,6 +48,27 @@ export function classifyMaterialSlot(materialName: string, meshName: string): Av
     return 'facialFeatures';
   }
 
+  // Prioritize clothing indicators on material name before generic body/mesh naming
+  const matLower = materialName.toLowerCase();
+  if (
+    matLower.includes('wear') ||
+    matLower.includes('cloth') ||
+    matLower.includes('shirt') ||
+    matLower.includes('pant') ||
+    matLower.includes('suit') ||
+    matLower.includes('jacket') ||
+    matLower.includes('shoe') ||
+    matLower.includes('boot') ||
+    matLower.includes('dress') ||
+    matLower.includes('skirt') ||
+    matLower.includes('tie') ||
+    matLower.includes('ribbon') ||
+    matLower.includes('metal') ||
+    matLower.includes('glass')
+  ) {
+    return 'clothing';
+  }
+
   if (
     combined.includes('skin') ||
     combined.includes('face') ||
@@ -128,14 +149,19 @@ export function applyPaletteMaterials(vrm: VRM, isRemote = false): void {
   vrm.scene.traverse((obj) => {
     if (obj.userData?.isOutline) return;
 
-    if (obj instanceof THREE.Mesh) {
-      const oldMaterials = Array.isArray(obj.material) ? obj.material : [obj.material];
+    // Use .isMesh property flag rather than instanceof THREE.Mesh
+    // to avoid prototype check failure across bundler modules
+    const mesh = obj as THREE.Mesh;
+    if (mesh.isMesh) {
+      mesh.frustumCulled = false; // Prevent camera close-up frustum culling on split body/face parts
+
+      const oldMaterials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
       const newMaterials: THREE.MeshBasicMaterial[] = [];
 
       for (const oldMat of oldMaterials) {
         if (!oldMat) continue;
 
-        const slot = classifyMaterialSlot(oldMat.name || '', obj.name || '');
+        const slot = classifyMaterialSlot(oldMat.name || '', mesh.name || '');
         const targetHex = colorMap[slot];
 
         disposeMaterialTextures(oldMat);
@@ -143,6 +169,7 @@ export function applyPaletteMaterials(vrm: VRM, isRemote = false): void {
 
         const newMat = new THREE.MeshBasicMaterial({
           color: targetHex,
+          side: THREE.DoubleSide, // Ensure flat unlit palette color is drawn on both front and back faces
           toneMapped: false,
           wireframe: false,
         });
@@ -150,13 +177,14 @@ export function applyPaletteMaterials(vrm: VRM, isRemote = false): void {
         newMaterials.push(newMat);
       }
 
-      obj.material = Array.isArray(obj.material) ? newMaterials : newMaterials[0];
-      meshesToOutline.push(obj);
+      mesh.material = Array.isArray(mesh.material) ? newMaterials : newMaterials[0];
+      meshesToOutline.push(mesh);
     }
   });
 
   // Construct Inverted-Hull Pink Outlines
   for (const originalMesh of meshesToOutline) {
+    const isSkinned = (originalMesh as THREE.SkinnedMesh).isSkinnedMesh;
     const outlineMat = new THREE.MeshBasicMaterial({
       color: colorMap.outline, // Pink: 0xf70063
       side: THREE.BackSide,
@@ -167,9 +195,17 @@ export function applyPaletteMaterials(vrm: VRM, isRemote = false): void {
     });
 
     let outlineMesh: THREE.Mesh;
-    if (originalMesh instanceof THREE.SkinnedMesh) {
-      const skinnedOutline = new THREE.SkinnedMesh(originalMesh.geometry, outlineMat);
-      skinnedOutline.bind(originalMesh.skeleton, originalMesh.bindMatrix);
+    if (isSkinned) {
+      const skinnedMesh = originalMesh as THREE.SkinnedMesh;
+      const skinnedOutline = new THREE.SkinnedMesh(skinnedMesh.geometry, outlineMat);
+      skinnedOutline.bind(skinnedMesh.skeleton, skinnedMesh.bindMatrix);
+      // Synchronize morph targets so outline deforms in lockstep with facial expressions
+      if (skinnedMesh.morphTargetInfluences) {
+        skinnedOutline.morphTargetInfluences = skinnedMesh.morphTargetInfluences;
+      }
+      if (skinnedMesh.morphTargetDictionary) {
+        skinnedOutline.morphTargetDictionary = skinnedMesh.morphTargetDictionary;
+      }
       outlineMesh = skinnedOutline;
     } else {
       outlineMesh = new THREE.Mesh(originalMesh.geometry, outlineMat);
@@ -177,6 +213,7 @@ export function applyPaletteMaterials(vrm: VRM, isRemote = false): void {
 
     outlineMesh.name = `${originalMesh.name}_outline`;
     outlineMesh.userData.isOutline = true;
+    outlineMesh.frustumCulled = false;
     outlineMesh.scale.set(1.008, 1.008, 1.008);
 
     originalMesh.add(outlineMesh);
