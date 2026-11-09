@@ -1,6 +1,10 @@
 import * as THREE from 'three';
+import {
+  VRMExpressionTextureTransformBind,
+  VRMExpressionMaterialColorBind,
+} from '@pixiv/three-vrm';
 import type { VRM } from '@pixiv/three-vrm';
-import { ALLOWED_NUMBERS } from '@/lib/colors';
+import { ALLOWED_NUMBERS } from '../colors';
 
 // Strict 4-color palette mapping for local avatar
 export const LOCAL_AVATAR_COLOR_MAP = {
@@ -79,7 +83,40 @@ function disposeMaterialTextures(mat: THREE.Material): void {
   for (const slot of textureSlots) {
     if (anyMat[slot] && typeof anyMat[slot].dispose === 'function') {
       anyMat[slot].dispose();
-      anyMat[slot] = null;
+      delete anyMat[slot];
+    }
+  }
+}
+
+/**
+ * Strip texture transform binds and material color binds from VRM expressions.
+ * In Betterverse Duo's unlit 4-color palette, avatars use flat MeshBasicMaterial
+ * with no texture maps and static palette slot colors. VRM expression texture transform binds
+ * attempt to read `material.map.offset` during `expressionManager.update()`, which throws
+ * `TypeError: Cannot read properties of null (reading 'offset')` when textures are absent.
+ * Removing these binds ensures blendshapes (morph target weights) continue animating cleanly.
+ */
+export function sanitizeExpressionBinds(vrm: VRM): void {
+  if (!vrm.expressionManager) return;
+
+  const expressions = vrm.expressionManager.expressions ?? [];
+  for (const expr of expressions) {
+    const binds = [...expr.binds];
+    for (const bind of binds) {
+      const isTextureTransform =
+        bind instanceof VRMExpressionTextureTransformBind ||
+        bind.constructor?.name === 'VRMExpressionTextureTransformBind' ||
+        'offset' in bind ||
+        'scale' in bind;
+
+      const isMaterialColor =
+        bind instanceof VRMExpressionMaterialColorBind ||
+        bind.constructor?.name === 'VRMExpressionMaterialColorBind' ||
+        'targetValue' in bind;
+
+      if (isTextureTransform || isMaterialColor) {
+        expr.deleteBind(bind);
+      }
     }
   }
 }
@@ -144,4 +181,7 @@ export function applyPaletteMaterials(vrm: VRM, isRemote = false): void {
 
     originalMesh.add(outlineMesh);
   }
+
+  // Sanitize expression binds so clearAppliedWeight() only updates morph target blendshapes
+  sanitizeExpressionBinds(vrm);
 }

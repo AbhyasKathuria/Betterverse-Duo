@@ -388,6 +388,10 @@ export class VRMRetargeter {
       if (key === 'blinkRight') exprMgr.setValue('blink_r', this.currentExpressions[key]);
     }
 
-    exprMgr.update();
+    try {
+      exprMgr.update();
+    } catch (err) {
+      console.warn('VRM expressionManager update error:', err);
+    }
   }
 }

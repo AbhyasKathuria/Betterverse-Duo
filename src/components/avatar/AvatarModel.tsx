@@ -124,8 +124,12 @@ export default function AvatarModel({
 
     // Read latest tracking frame directly from ref (NO setState per frame)
     const latestFrame = trackingFrameRef.current;
-    retargeterRef.current.update(latestFrame, delta);
-    vrm.update(delta);
+    try {
+      retargeterRef.current.update(latestFrame, delta);
+      vrm.update(delta);
+    } catch (err) {
+      console.warn('AvatarModel render update error:', err);
+    }
 
     // Export motion state at 30 Hz for WebRTC transmission
     const now = performance.now();

@@ -129,7 +129,11 @@ export default function RemoteAvatarModel({
           if (key === 'blinkLeft') exprMgr.setValue('blink_l', val);
           if (key === 'blinkRight') exprMgr.setValue('blink_r', val);
         }
-        exprMgr.update();
+        try {
+          exprMgr.update();
+        } catch (err) {
+          console.warn('Remote VRM expressionManager update error:', err);
+        }
       }
     } else {
       // Ease gracefully to rest pose over 0.5s on disconnect or weak connection
@@ -157,7 +161,11 @@ export default function RemoteAvatarModel({
       }
     }
 
-    vrm.update(delta);
+    try {
+      vrm.update(delta);
+    } catch (err) {
+      console.warn('RemoteAvatarModel render update error:', err);
+    }
   });
 
   if (!vrm) return null;

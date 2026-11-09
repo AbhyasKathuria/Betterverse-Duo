@@ -1,6 +1,13 @@
 import { describe, it, expect } from 'vitest';
+import {
+  VRMExpression,
+  VRMExpressionManager,
+  VRMExpressionTextureTransformBind,
+  VRMExpressionMorphTargetBind,
+} from '@pixiv/three-vrm';
 import { mediapipeWorldToThree } from '../src/lib/avatar/coordinates';
 import { OneEuroFilter } from '../src/lib/avatar/one-euro-filter';
+import { classifyMaterialSlot, sanitizeExpressionBinds } from '../src/lib/avatar/material-config';
 
 describe('mediapipeWorldToThree Coordinate Transformation', () => {
   it('correctly inverts Y and Z while preserving X', () => {
@@ -65,5 +72,55 @@ describe('OneEuroFilter Smoothing Filter', () => {
 
     const { value } = filter.filter(25.0, 1.0);
     expect(value).toBe(25.0);
+  });
+});
+
+describe('Avatar Material & Expression Sanitization', () => {
+  it('correctly classifies material slots into 4-color semantic groups', () => {
+    expect(classifyMaterialSlot('Hair_Front', 'mesh_hair')).toBe('hair');
+    expect(classifyMaterialSlot('Face_Eye', 'mesh_eye')).toBe('facialFeatures');
+    expect(classifyMaterialSlot('Body_Skin', 'mesh_arm')).toBe('skin');
+    expect(classifyMaterialSlot('Shirt', 'mesh_cloth')).toBe('clothing');
+  });
+
+  it('sanitizeExpressionBinds removes texture transform and material color binds while preserving morph targets', () => {
+    const exprMgr = new VRMExpressionManager();
+    const expr = new VRMExpression('happy');
+
+    // Add a morph target bind (shape key for smiling)
+    const morphBind = new VRMExpressionMorphTargetBind({
+      primitives: [],
+      index: 0,
+      weight: 1.0,
+    });
+    expr.addBind(morphBind);
+
+    // Add a texture transform bind (which would crash if material.map is null)
+    const texBind = new VRMExpressionTextureTransformBind({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      material: {} as any,
+      scale: { x: 1, y: 1 } as any,
+      offset: { x: 0, y: 0 } as any,
+    });
+    expr.addBind(texBind);
+
+    exprMgr.registerExpression(expr);
+
+    // Mock VRM object
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const mockVrm = {
+      expressionManager: exprMgr,
+    } as any;
+
+    expect(expr.binds.length).toBe(2);
+
+    sanitizeExpressionBinds(mockVrm);
+
+    // Only the morph target bind should remain; texture transform bind removed
+    expect(expr.binds.length).toBe(1);
+    expect(expr.binds[0]).toBe(morphBind);
+
+    // Updating expressions should now execute safely without throwing offset error
+    expect(() => exprMgr.update()).not.toThrow();
   });
 });
