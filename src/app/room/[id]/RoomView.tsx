@@ -116,22 +116,26 @@ export default function RoomView({ roomId }: RoomViewProps) {
     try {
       const isCreateParam = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('create') === '1';
 
-      if (forceCreate || isCreateParam) {
+      if (forceCreate) {
+        await createRoomRpc(roomId);
+      } else {
+        // Attempt idempotent join first. If room already exists, join succeeds with zero 409 conflict error.
         try {
-          await createRoomRpc(roomId);
-          if (typeof window !== 'undefined' && window.history.replaceState) {
-            window.history.replaceState({}, '', `/room/${roomId}`);
-          }
-        } catch (createErr: unknown) {
-          const msg = createErr instanceof Error ? createErr.message : String(createErr);
-          if (msg.includes('duplicate') || msg.includes('unique') || msg.includes('already exists') || msg.includes('rooms_pkey')) {
-            await joinRoomRpc(roomId);
+          await joinRoomRpc(roomId);
+        } catch (joinErr: unknown) {
+          const msg = joinErr instanceof Error ? joinErr.message : String(joinErr);
+          if (isCreateParam && msg.includes('room_not_found')) {
+            // Room does not exist yet and user clicked 'Create Room' -> create it now
+            await createRoomRpc(roomId);
           } else {
-            throw createErr;
+            throw joinErr;
           }
         }
-      } else {
-        await joinRoomRpc(roomId);
+      }
+
+      // Clean query string immediately so reloads don't re-trigger creation
+      if (typeof window !== 'undefined' && window.history.replaceState) {
+        window.history.replaceState({}, '', `/room/${roomId}`);
       }
 
       setIsJoiningRoom(false);

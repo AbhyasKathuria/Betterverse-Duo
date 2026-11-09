@@ -20,6 +20,14 @@ const REST_ARM_L = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, -Ma
 const REST_ARM_R = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, Math.PI * 0.38));
 const IDENTITY_QUAT = new THREE.Quaternion();
 
+// Basis transformation: converts MediaPipe camera space (Y-down, Z-into-scene) to Three.js space (Y-up, Z-towards-viewer)
+const MP_TO_THREE_BASIS = new THREE.Matrix4().set(
+  1,  0,  0, 0,
+  0, -1,  0, 0,
+  0,  0, -1, 0,
+  0,  0,  0, 1
+);
+
 export class VRMRetargeter {
   private vrm: VRM;
 
@@ -129,12 +137,49 @@ export class VRMRetargeter {
     const headNode = this.vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Head);
     if (!headNode) return;
 
-    if (frame?.facialTransformationMatrix && frame.facialTransformationMatrix.length === 16) {
-      // Decompose 4x4 matrix from MediaPipe FaceLandmarker
-      _mat4.fromArray(frame.facialTransformationMatrix);
-      _q1.setFromRotationMatrix(_mat4);
+    let hasHeadPose = false;
 
-      // Convert from camera view rotation to avatar neck rotation
+    if (frame?.facialTransformationMatrix && frame.facialTransformationMatrix.length === 16) {
+      const m = frame.facialTransformationMatrix;
+      // MediaPipe matrix data is row-major; Matrix4.set accepts row-major arguments
+      _mat4.set(
+        m[0], m[1], m[2], m[3],
+        m[4], m[5], m[6], m[7],
+        m[8], m[9], m[10], m[11],
+        m[12], m[13], m[14], m[15]
+      );
+      // Transform MediaPipe Y-down, Z-into-scene basis into Three.js coordinates
+      _mat4.premultiply(MP_TO_THREE_BASIS);
+      _q1.setFromRotationMatrix(_mat4);
+      hasHeadPose = true;
+    } else if (frame?.faceLandmarks && frame.faceLandmarks.length >= 468) {
+      // Robust landmark fallback: estimate head yaw, pitch, and roll from face landmarks
+      const nose = frame.faceLandmarks[1];      // Nose tip
+      const leftEye = frame.faceLandmarks[33];   // Left eye outer corner
+      const rightEye = frame.faceLandmarks[263]; // Right eye outer corner
+      const chin = frame.faceLandmarks[152];    // Chin
+      const forehead = frame.faceLandmarks[10]; // Forehead center
+
+      if (nose && leftEye && rightEye && chin && forehead) {
+        const eyeMidX = (leftEye.x + rightEye.x) * 0.5;
+        const eyeMidY = (leftEye.y + rightEye.y) * 0.5;
+        const eyeDist = Math.hypot(rightEye.x - leftEye.x, rightEye.y - leftEye.y) || 0.1;
+
+        // Yaw: nose deviation from eye midpoint relative to interocular distance
+        const rawYaw = ((nose.x - eyeMidX) / eyeDist) * 1.5;
+        // Pitch: vertical ratio of nose to chin/forehead
+        const faceHeight = Math.hypot(chin.x - forehead.x, chin.y - forehead.y) || 0.2;
+        const rawPitch = (((nose.y - eyeMidY) / faceHeight) - 0.25) * 2.0;
+        // Roll: eye line angle
+        const rawRoll = Math.atan2(rightEye.y - leftEye.y, rightEye.x - leftEye.x);
+
+        _euler.set(rawPitch, rawYaw, rawRoll, 'YXZ');
+        _q1.setFromEuler(_euler);
+        hasHeadPose = true;
+      }
+    }
+
+    if (hasHeadPose) {
       // Apply user recentering offset
       _q2.multiplyQuaternions(this.headNeutralOffset, _q1);
 
@@ -143,7 +188,6 @@ export class VRMRetargeter {
       _euler.x = THREE.MathUtils.clamp(_euler.x, -THREE.MathUtils.degToRad(35), THREE.MathUtils.degToRad(35));
       _euler.y = THREE.MathUtils.clamp(_euler.y, -THREE.MathUtils.degToRad(60), THREE.MathUtils.degToRad(60));
       _euler.z = THREE.MathUtils.clamp(_euler.z, -THREE.MathUtils.degToRad(25), THREE.MathUtils.degToRad(25));
-      _q2.setFromEuler(_euler);
 
       // Smooth with 1€ filter
       const smoothedYaw = this.headFilter.filter(_euler.y, timeSec).value;
@@ -164,7 +208,7 @@ export class VRMRetargeter {
     if (!spineNode) return;
 
     const pose = frame?.poseWorld;
-    if (pose && pose.length >= 25 && (pose[11].visibility ?? 1) > 0.5 && (pose[12].visibility ?? 1) > 0.5) {
+    if (pose && pose.length >= 25 && (pose[11].visibility ?? 1) > 0.25 && (pose[12].visibility ?? 1) > 0.25) {
       const p11 = mediapipeWorldToThree(pose[11]); // Left shoulder
       const p12 = mediapipeWorldToThree(pose[12]); // Right shoulder
 
@@ -199,8 +243,8 @@ export class VRMRetargeter {
     if (
       leftUpper &&
       pose &&
-      (pose[11]?.visibility ?? 0) > 0.5 &&
-      (pose[13]?.visibility ?? 0) > 0.5
+      (pose[11]?.visibility ?? 0) > 0.25 &&
+      (pose[13]?.visibility ?? 0) > 0.25
     ) {
       const s = mediapipeWorldToThree(pose[11]);
       const e = mediapipeWorldToThree(pose[13]);
@@ -211,7 +255,7 @@ export class VRMRetargeter {
       _q1.setFromUnitVectors(new THREE.Vector3(1, 0, 0), _v1);
       this.currentArmL.slerp(_q1, 0.35);
 
-      if (leftLower && (pose[15]?.visibility ?? 0) > 0.5) {
+      if (leftLower && (pose[15]?.visibility ?? 0) > 0.25) {
         _v2.set(w.x - e.x, w.y - e.y, w.z - e.z).normalize();
         const bendAngle = THREE.MathUtils.clamp(_v1.angleTo(_v2), 0, THREE.MathUtils.degToRad(145));
         _q2.setFromAxisAngle(new THREE.Vector3(0, 0, 1), bendAngle);
@@ -229,8 +273,8 @@ export class VRMRetargeter {
     if (
       rightUpper &&
       pose &&
-      (pose[12]?.visibility ?? 0) > 0.5 &&
-      (pose[14]?.visibility ?? 0) > 0.5
+      (pose[12]?.visibility ?? 0) > 0.25 &&
+      (pose[14]?.visibility ?? 0) > 0.25
     ) {
       const s = mediapipeWorldToThree(pose[12]);
       const e = mediapipeWorldToThree(pose[14]);
@@ -241,7 +285,7 @@ export class VRMRetargeter {
       _q1.setFromUnitVectors(new THREE.Vector3(-1, 0, 0), _v1);
       this.currentArmR.slerp(_q1, 0.35);
 
-      if (rightLower && (pose[16]?.visibility ?? 0) > 0.5) {
+      if (rightLower && (pose[16]?.visibility ?? 0) > 0.25) {
         _v2.set(w.x - e.x, w.y - e.y, w.z - e.z).normalize();
         const bendAngle = THREE.MathUtils.clamp(_v1.angleTo(_v2), 0, THREE.MathUtils.degToRad(145));
         _q2.setFromAxisAngle(new THREE.Vector3(0, 0, -1), bendAngle);

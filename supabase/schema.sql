@@ -41,8 +41,10 @@ returns text language plpgsql security definer set search_path = public as $$
 begin
   if auth.uid() is null then raise exception 'not_authenticated'; end if;
   if p_room_id !~ '^[A-Za-z0-9]{10,64}$' then raise exception 'invalid_room_id'; end if;
-  insert into public.rooms(id, created_by) values (p_room_id, auth.uid());
-  insert into public.room_memberships(room_id, user_id) values (p_room_id, auth.uid());
+  insert into public.rooms(id, created_by) values (p_room_id, auth.uid())
+    on conflict (id) do nothing;
+  insert into public.room_memberships(room_id, user_id) values (p_room_id, auth.uid())
+    on conflict (room_id, user_id) do nothing;
   return p_room_id;
 end $$;
 
