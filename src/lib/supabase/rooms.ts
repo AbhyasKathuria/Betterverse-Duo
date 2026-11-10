@@ -44,7 +44,19 @@ export function mapRoomError(err: unknown): { type: RoomErrorType; message: stri
 export async function createRoomRpc(roomId: string): Promise<string> {
   const supabase = getSupabase();
   const { data, error } = await supabase.rpc('create_room', { p_room_id: roomId });
-  if (error) throw new Error(error.message);
+  if (error) {
+    const msg = error.message?.toLowerCase() || '';
+    // If room already exists or conflict occurred (409), cleanly rejoin
+    if (
+      error.code === '23505' ||
+      msg.includes('duplicate') ||
+      msg.includes('conflict') ||
+      msg.includes('already exists')
+    ) {
+      return joinRoomRpc(roomId);
+    }
+    throw new Error(error.message);
+  }
   return data as string;
 }
 

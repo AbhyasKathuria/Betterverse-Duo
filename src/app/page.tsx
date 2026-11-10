@@ -5,12 +5,15 @@ import { useRouter } from 'next/navigation';
 import { generateRoomCode, isValidRoomCode, normalizeRoomCode } from '@/lib/room-code';
 import AvatarPicker, { AVAILABLE_AVATARS, type AvatarOption } from '@/components/avatar/AvatarPicker';
 import ThemeSelector from '@/components/theme/ThemeSelector';
+import WorldSelector from '@/components/world/WorldSelector';
 import { type ThemeId, THEMES } from '@/lib/colors';
+import { type WorldId, WORLDS } from '@/lib/world-types';
 
 export default function HomePage() {
   const router = useRouter();
   const [selectedAvatar, setSelectedAvatar] = useState<AvatarOption>(AVAILABLE_AVATARS[0]);
   const [theme, setTheme] = useState<ThemeId>('classic');
+  const [worldId, setWorldId] = useState<WorldId>('cyberGrid');
   const [joinInput, setJoinInput] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -20,6 +23,10 @@ export default function HomePage() {
       if (saved && THEMES[saved]) {
         setTheme(saved);
       }
+      const savedWorld = localStorage.getItem('betterverse_world') as WorldId;
+      if (savedWorld && WORLDS[savedWorld]) {
+        setWorldId(savedWorld);
+      }
     } catch {}
   }, []);
 
@@ -27,6 +34,13 @@ export default function HomePage() {
     setTheme(newTheme);
     try {
       localStorage.setItem('betterverse_theme', newTheme);
+    } catch {}
+  };
+
+  const handleSelectWorld = (newWorld: WorldId) => {
+    setWorldId(newWorld);
+    try {
+      localStorage.setItem('betterverse_world', newWorld);
     } catch {}
   };
 
@@ -94,6 +108,10 @@ export default function HomePage() {
           <ThemeSelector
             currentTheme={theme}
             onSelectTheme={handleSelectTheme}
+          />
+          <WorldSelector
+            currentWorld={worldId}
+            onSelectWorld={handleSelectWorld}
           />
         </div>
       </section>

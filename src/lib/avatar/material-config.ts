@@ -109,22 +109,33 @@ export function sanitizeExpressionBinds(vrm: VRM): void {
 
   const expressions = vrm.expressionManager.expressions ?? [];
   for (const expr of expressions) {
-    const binds = [...expr.binds];
-    for (const bind of binds) {
-      const isTextureTransform =
-        bind instanceof VRMExpressionTextureTransformBind ||
-        bind.constructor?.name === 'VRMExpressionTextureTransformBind' ||
-        'offset' in bind ||
-        'scale' in bind;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rawExpr = expr as any;
 
-      const isMaterialColor =
-        bind instanceof VRMExpressionMaterialColorBind ||
-        bind.constructor?.name === 'VRMExpressionMaterialColorBind' ||
-        'targetValue' in bind;
+    // Filter _binds directly to retain ONLY morph target binds (those operating on mesh primitives)
+    if (Array.isArray(rawExpr._binds)) {
+      rawExpr._binds = rawExpr._binds.filter((bind: any) => {
+        if (!bind) return false;
+        // Material and texture transform binds have .material or .offset
+        if ('material' in bind || 'offset' in bind || 'scale' in bind || 'targetValue' in bind) {
+          return false;
+        }
+        // Valid morph target binds have 'primitives' array and 'index' number
+        const isMorph = Array.isArray(bind.primitives) && typeof bind.index === 'number';
+        return isMorph;
+      });
+    }
 
-      if (isTextureTransform || isMaterialColor) {
-        expr.deleteBind(bind);
-      }
+    // Wrap clearAppliedWeight defensively to prevent unhandled crashes
+    const originalClear = rawExpr.clearAppliedWeight;
+    if (typeof originalClear === 'function') {
+      rawExpr.clearAppliedWeight = function () {
+        try {
+          originalClear.call(this);
+        } catch {
+          // Suppress any residual untextured material transform errors
+        }
+      };
     }
   }
 }

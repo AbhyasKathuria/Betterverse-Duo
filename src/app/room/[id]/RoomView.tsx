@@ -5,7 +5,9 @@ import { useRouter } from 'next/navigation';
 import TrackingView from '@/components/tracking/TrackingView';
 import AvatarPicker, { AVAILABLE_AVATARS, type AvatarOption } from '@/components/avatar/AvatarPicker';
 import ThemeSelector from '@/components/theme/ThemeSelector';
+import WorldSelector from '@/components/world/WorldSelector';
 import { type ThemeId, THEMES } from '@/lib/colors';
+import { type WorldId, WORLDS } from '@/lib/world-types';
 import { DynamicDualAvatarScene } from '@/components/avatar/DynamicDualAvatarScene';
 import AudioControls from '@/components/audio/AudioControls';
 import SharedActivities from '@/components/activity/SharedActivities';
@@ -38,6 +40,7 @@ export default function RoomView({ roomId }: RoomViewProps) {
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [selectedAvatar, setSelectedAvatar] = useState<AvatarOption>(AVAILABLE_AVATARS[0]);
   const [theme, setTheme] = useState<ThemeId>('classic');
+  const [worldId, setWorldId] = useState<WorldId>('cyberGrid');
   const [partnerAvatarId, setPartnerAvatarId] = useState<string | null>(null);
   const [recenterTrigger, setRecenterTrigger] = useState(0);
   const [showPip, setShowPip] = useState(true);
@@ -46,6 +49,8 @@ export default function RoomView({ roomId }: RoomViewProps) {
     try {
       const savedTheme = localStorage.getItem('betterverse_theme') as ThemeId;
       if (savedTheme && THEMES[savedTheme]) setTheme(savedTheme);
+      const savedWorld = localStorage.getItem('betterverse_world') as WorldId;
+      if (savedWorld && WORLDS[savedWorld]) setWorldId(savedWorld);
     } catch {}
   }, []);
 
@@ -53,6 +58,13 @@ export default function RoomView({ roomId }: RoomViewProps) {
     setTheme(newTheme);
     try {
       localStorage.setItem('betterverse_theme', newTheme);
+    } catch {}
+  };
+
+  const handleSelectWorld = (newWorld: WorldId) => {
+    setWorldId(newWorld);
+    try {
+      localStorage.setItem('betterverse_world', newWorld);
     } catch {}
   };
 
@@ -534,6 +546,10 @@ export default function RoomView({ roomId }: RoomViewProps) {
               currentTheme={theme}
               onSelectTheme={handleSelectTheme}
             />
+            <WorldSelector
+              currentWorld={worldId}
+              onSelectWorld={handleSelectWorld}
+            />
           </div>
 
           {/* Voice & Spatial Audio Controls */}
@@ -578,6 +594,7 @@ export default function RoomView({ roomId }: RoomViewProps) {
             recenterTrigger={recenterTrigger}
             isWeakConnection={isWeakConnection}
             theme={theme}
+            worldId={worldId}
           />
 
           {/* Floating Tracking PiP Container */}
@@ -598,7 +615,8 @@ export default function RoomView({ roomId }: RoomViewProps) {
       <footer className="border-4 border-amber p-4 bg-blue mt-3">
         {/* Quick Keyboard Shortcuts Legend */}
         <div className="flex flex-wrap items-center gap-3 border-b-2 border-amber pb-2 mb-3 text-xs font-black text-yellow">
-          <span className="text-amber uppercase">Shortcuts:</span>
+          <span className="text-amber uppercase">Controls:</span>
+          <span><kbd className="border border-amber px-1.5 py-0.5 text-yellow font-black">WASD / Arrows</kbd> Move Avatar</span>
           <span><kbd className="border border-amber px-1.5 py-0.5 text-yellow font-black">R</kbd> Recenter</span>
           <span><kbd className="border border-amber px-1.5 py-0.5 text-yellow font-black">H</kbd> Heart</span>
           <span><kbd className="border border-amber px-1.5 py-0.5 text-yellow font-black">S</kbd> Sparkle</span>

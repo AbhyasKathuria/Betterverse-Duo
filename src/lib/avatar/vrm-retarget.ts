@@ -13,34 +13,17 @@ const _v3 = new THREE.Vector3();
 const _q1 = new THREE.Quaternion();
 const _q2 = new THREE.Quaternion();
 const _euler = new THREE.Euler(0, 0, 0, 'YXZ');
-const _mat4 = new THREE.Matrix4();
 
-// Default Rest Rotations (VRM 1.0 base conventions)
-const REST_ARM_L_VRM1 = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, -Math.PI * 0.38));
-const REST_ARM_R_VRM1 = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, Math.PI * 0.38));
-// Default Rest Rotations (VRM 0.x conventions - inverted bone local axes)
-const REST_ARM_L_VRM0 = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, Math.PI * 0.38));
-const REST_ARM_R_VRM0 = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, -Math.PI * 0.38));
+// Default Rest Rotations (VRM normalized humanoid conventions)
+// Left upper arm (+X in T-pose): rotate clockwise around Z to rest naturally at the side
+const REST_ARM_L = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, -Math.PI * 0.38));
+// Right upper arm (-X in T-pose): rotate counter-clockwise around Z to rest naturally at the side
+const REST_ARM_R = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, Math.PI * 0.38));
 
 const IDENTITY_QUAT = new THREE.Quaternion();
 
-// Basis transformation: converts MediaPipe camera space (Y-down, Z-into-scene) to Three.js space (Y-up, Z-towards-viewer)
-const MP_TO_THREE_BASIS = new THREE.Matrix4().set(
-  1,  0,  0, 0,
-  0, -1,  0, 0,
-  0,  0, -1, 0,
-  0,  0,  0, 1
-);
-
 export class VRMRetargeter {
   private vrm: VRM;
-  private isVrm0: boolean;
-  private restArmL: THREE.Quaternion;
-  private restArmR: THREE.Quaternion;
-  private armLInitVec: THREE.Vector3;
-  private armRInitVec: THREE.Vector3;
-  private bendAxisL: THREE.Vector3;
-  private bendAxisR: THREE.Vector3;
 
   // Smoothing filters (1€ Filter)
   public headFilter: OneEuroFilter;
@@ -62,6 +45,19 @@ export class VRMRetargeter {
   private currentArmR = new THREE.Quaternion();
   private currentForearmR = new THREE.Quaternion();
 
+  // Locomotion & Leaning Position
+  public basePosition = new THREE.Vector3(0, 0, 0);
+  public leanPosition = new THREE.Vector3(0, 0, 0);
+  private initialSceneY = 0;
+  private activeKeys = new Set<string>();
+  private keydownHandler: ((e: KeyboardEvent) => void) | null = null;
+  private keyupHandler: ((e: KeyboardEvent) => void) | null = null;
+
+  // Natural Human Life Micro-Dynamics
+  private lastBlinkTime = performance.now();
+  private spontaneousBlinkActive = false;
+  private spontaneousBlinkStart = 0;
+
   // Current blendshape values (0 to 1)
   private currentExpressions: Record<string, number> = {
     blinkLeft: 0,
@@ -75,26 +71,9 @@ export class VRMRetargeter {
 
   constructor(vrm: VRM, minCutoff = 1.0, beta = 0.007) {
     this.vrm = vrm;
-    this.isVrm0 = vrm.meta?.metaVersion === '0';
 
-    if (this.isVrm0) {
-      this.restArmL = REST_ARM_L_VRM0.clone();
-      this.restArmR = REST_ARM_R_VRM0.clone();
-      this.armLInitVec = new THREE.Vector3(-1, 0, 0);
-      this.armRInitVec = new THREE.Vector3(1, 0, 0);
-      this.bendAxisL = new THREE.Vector3(0, 0, -1);
-      this.bendAxisR = new THREE.Vector3(0, 0, 1);
-    } else {
-      this.restArmL = REST_ARM_L_VRM1.clone();
-      this.restArmR = REST_ARM_R_VRM1.clone();
-      this.armLInitVec = new THREE.Vector3(1, 0, 0);
-      this.armRInitVec = new THREE.Vector3(-1, 0, 0);
-      this.bendAxisL = new THREE.Vector3(0, 0, 1);
-      this.bendAxisR = new THREE.Vector3(0, 0, -1);
-    }
-
-    this.currentArmL.copy(this.restArmL);
-    this.currentArmR.copy(this.restArmR);
+    this.currentArmL.copy(REST_ARM_L);
+    this.currentArmR.copy(REST_ARM_R);
 
     this.headFilter = new OneEuroFilter({ minCutoff, beta });
     this.spineFilter = new OneEuroFilter({ minCutoff, beta });
@@ -109,6 +88,38 @@ export class VRMRetargeter {
       ['aa', new OneEuroFilter({ minCutoff: 1.2, beta: 0.01 })],
       ['happy', new OneEuroFilter({ minCutoff: 1.0, beta: 0.007 })],
     ]);
+
+    // Calibrate head height so avatar is framed waist-up in center
+    this.calibrateHeadHeight(1.35);
+
+    // Setup keyboard locomotion listeners
+    if (typeof window !== 'undefined') {
+      this.keydownHandler = (e: KeyboardEvent) => {
+        const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
+        if (tag === 'input' || tag === 'textarea') return;
+
+        this.activeKeys.add(e.code);
+        if (e.code === 'KeyR') {
+          this.recenter();
+        }
+      };
+      this.keyupHandler = (e: KeyboardEvent) => {
+        this.activeKeys.delete(e.code);
+      };
+      window.addEventListener('keydown', this.keydownHandler);
+      window.addEventListener('keyup', this.keyupHandler);
+    }
+  }
+
+  public calibrateHeadHeight(targetHeadY = 1.35): void {
+    this.vrm.scene.updateMatrixWorld(true);
+    const headNode = this.vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Head);
+    if (headNode) {
+      const headPos = new THREE.Vector3();
+      headNode.getWorldPosition(headPos);
+      this.initialSceneY = targetHeadY - headPos.y;
+      this.vrm.scene.position.y = this.initialSceneY;
+    }
   }
 
   public setFilterParams(minCutoff: number, beta: number): void {
@@ -122,6 +133,12 @@ export class VRMRetargeter {
 
   public recenterHead(): void {
     this.headNeutralOffset.copy(this.currentHeadQuat).invert();
+  }
+
+  public recenter(): void {
+    this.recenterHead();
+    this.basePosition.set(0, 0, 0);
+    this.leanPosition.set(0, 0, 0);
   }
 
   public getCurrentMotionState(sequence: number, timestamp: number): UnencodedMotionState {
@@ -148,6 +165,52 @@ export class VRMRetargeter {
     const timestampSec = (frame?.timestamp ?? performance.now()) / 1000.0;
     const easeRate = Math.min(1.0, deltaSec / 0.5); // 0.5s ease duration on tracking loss
 
+    // 0. Update Locomotion (WASD / Arrow Keys)
+    const moveSpeed = 1.35; // meters per second
+    if (this.activeKeys.has('KeyW') || this.activeKeys.has('ArrowUp')) {
+      this.basePosition.z -= moveSpeed * deltaSec;
+    }
+    if (this.activeKeys.has('KeyS') || this.activeKeys.has('ArrowDown')) {
+      this.basePosition.z += moveSpeed * deltaSec;
+    }
+    if (this.activeKeys.has('KeyA') || this.activeKeys.has('ArrowLeft')) {
+      this.basePosition.x -= moveSpeed * deltaSec;
+    }
+    if (this.activeKeys.has('KeyD') || this.activeKeys.has('ArrowRight')) {
+      this.basePosition.x += moveSpeed * deltaSec;
+    }
+    // Clamp to 3D room boundaries
+    this.basePosition.x = THREE.MathUtils.clamp(this.basePosition.x, -2.5, 2.5);
+    this.basePosition.z = THREE.MathUtils.clamp(this.basePosition.z, -3.0, 1.5);
+
+    // Natural Positional Parallax Leaning from Face Landmarks
+    if (frame?.faceLandmarks && frame.faceLandmarks.length >= 468) {
+      const nose = frame.faceLandmarks[1];
+      const leftEye = frame.faceLandmarks[33];
+      const rightEye = frame.faceLandmarks[263];
+      if (nose && leftEye && rightEye) {
+        const eyeDist = Math.hypot(rightEye.x - leftEye.x, rightEye.y - leftEye.y) || 0.14;
+        const targetLeanX = (0.5 - nose.x) * 0.45;
+        const targetLeanY = (0.5 - nose.y) * 0.25;
+        const targetLeanZ = (0.14 - eyeDist) * 1.2;
+
+        this.leanPosition.x = THREE.MathUtils.lerp(this.leanPosition.x, targetLeanX, 0.15);
+        this.leanPosition.y = THREE.MathUtils.lerp(this.leanPosition.y, targetLeanY, 0.15);
+        this.leanPosition.z = THREE.MathUtils.lerp(this.leanPosition.z, targetLeanZ, 0.15);
+      }
+    } else {
+      this.leanPosition.lerp(IDENTITY_QUAT as unknown as THREE.Vector3, easeRate);
+    }
+
+    // Natural Respiration Breathing Heave & Idle Sway
+    const breathHeave = Math.sin(timestampSec * 1.6) * 0.012;
+    const idleSwayX = Math.sin(timestampSec * 0.5) * 0.005;
+
+    // Apply combined position to avatar
+    this.vrm.scene.position.x = this.basePosition.x + this.leanPosition.x + idleSwayX;
+    this.vrm.scene.position.y = this.initialSceneY + this.basePosition.y + this.leanPosition.y + breathHeave;
+    this.vrm.scene.position.z = this.basePosition.z + this.leanPosition.z;
+
     // 1. Head & Neck Retargeting
     this.updateHead(frame, timestampSec, easeRate);
 
@@ -170,21 +233,7 @@ export class VRMRetargeter {
 
     let hasHeadPose = false;
 
-    if (frame?.facialTransformationMatrix && frame.facialTransformationMatrix.length === 16) {
-      const m = frame.facialTransformationMatrix;
-      // MediaPipe matrix data is row-major; Matrix4.set accepts row-major arguments
-      _mat4.set(
-        m[0], m[1], m[2], m[3],
-        m[4], m[5], m[6], m[7],
-        m[8], m[9], m[10], m[11],
-        m[12], m[13], m[14], m[15]
-      );
-      // Transform MediaPipe Y-down, Z-into-scene basis into Three.js coordinates
-      _mat4.premultiply(MP_TO_THREE_BASIS);
-      _q1.setFromRotationMatrix(_mat4);
-      hasHeadPose = true;
-    } else if (frame?.faceLandmarks && frame.faceLandmarks.length >= 468) {
-      // Robust landmark fallback: estimate head yaw, pitch, and roll from face landmarks
+    if (frame?.faceLandmarks && frame.faceLandmarks.length >= 468) {
       const nose = frame.faceLandmarks[1];      // Nose tip
       const leftEye = frame.faceLandmarks[33];   // Left eye outer corner
       const rightEye = frame.faceLandmarks[263]; // Right eye outer corner
@@ -197,12 +246,15 @@ export class VRMRetargeter {
         const eyeDist = Math.hypot(rightEye.x - leftEye.x, rightEye.y - leftEye.y) || 0.1;
 
         // Yaw: nose deviation from eye midpoint relative to interocular distance
-        const rawYaw = ((nose.x - eyeMidX) / eyeDist) * 1.5;
-        // Pitch: vertical ratio of nose to chin/forehead
+        // Mirrors selfie camera naturally: turning head left/right rotates avatar left/right
+        const rawYaw = -((nose.x - eyeMidX) / eyeDist) * 1.5;
+
+        // Pitch: vertical ratio of nose to forehead and chin
         const faceHeight = Math.hypot(chin.x - forehead.x, chin.y - forehead.y) || 0.2;
-        const rawPitch = (((nose.y - eyeMidY) / faceHeight) - 0.25) * 2.0;
-        // Roll: eye line angle
-        const rawRoll = Math.atan2(rightEye.y - leftEye.y, rightEye.x - leftEye.x);
+        const rawPitch = (((nose.y - eyeMidY) / faceHeight) - 0.22) * 1.8;
+
+        // Roll: eye line tilt
+        const rawRoll = -Math.atan2(rightEye.y - leftEye.y, rightEye.x - leftEye.x);
 
         _euler.set(rawPitch, rawYaw, rawRoll, 'YXZ');
         _q1.setFromEuler(_euler);
@@ -220,15 +272,26 @@ export class VRMRetargeter {
       _euler.y = THREE.MathUtils.clamp(_euler.y, -THREE.MathUtils.degToRad(60), THREE.MathUtils.degToRad(60));
       _euler.z = THREE.MathUtils.clamp(_euler.z, -THREE.MathUtils.degToRad(25), THREE.MathUtils.degToRad(25));
 
+      // Add gentle idle head breathing micro-movement
+      _euler.y += Math.sin(timeSec * 0.5) * 0.01;
+      _euler.x += Math.cos(timeSec * 0.6) * 0.008;
+
       // Smooth with 1€ filter
       const smoothedYaw = this.headFilter.filter(_euler.y, timeSec).value;
       _euler.y = smoothedYaw;
       _q2.setFromEuler(_euler);
 
-      this.currentHeadQuat.slerp(_q2, 0.4);
+      this.currentHeadQuat.slerp(_q2, 0.45);
     } else {
-      // Easing back to neutral on tracking loss
-      this.currentHeadQuat.slerp(IDENTITY_QUAT, easeRate);
+      // Easing back to neutral on tracking loss with subtle idle micro-movement
+      _euler.set(
+        Math.cos(timeSec * 0.6) * 0.008,
+        Math.sin(timeSec * 0.5) * 0.01,
+        0,
+        'YXZ'
+      );
+      _q1.setFromEuler(_euler);
+      this.currentHeadQuat.slerp(_q1, easeRate);
     }
 
     headNode.quaternion.copy(this.currentHeadQuat);
@@ -237,6 +300,9 @@ export class VRMRetargeter {
   private updateSpine(frame: TrackingFrame | null, timeSec: number, easeRate: number): void {
     const spineNode = this.vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Spine);
     if (!spineNode) return;
+
+    // Respiration breathing pitch on the spine
+    const breathPitch = Math.sin(timeSec * 1.6) * 0.015;
 
     const pose = frame?.poseWorld;
     if (pose && pose.length >= 25 && (pose[11].visibility ?? 1) > 0.25 && (pose[12].visibility ?? 1) > 0.25) {
@@ -247,7 +313,7 @@ export class VRMRetargeter {
       const tiltRoll = Math.asin(THREE.MathUtils.clamp(_v1.y, -0.4, 0.4));
       const twistYaw = Math.atan2(_v1.z, _v1.x);
 
-      _euler.set(0, twistYaw * 0.3, tiltRoll * 0.4, 'YXZ');
+      _euler.set(breathPitch, twistYaw * 0.3, tiltRoll * 0.4, 'YXZ');
       _q1.setFromEuler(_euler);
 
       const smoothedRoll = this.spineFilter.filter(_euler.z, timeSec).value;
@@ -256,7 +322,9 @@ export class VRMRetargeter {
 
       this.currentSpineQuat.slerp(_q1, 0.3);
     } else {
-      this.currentSpineQuat.slerp(IDENTITY_QUAT, easeRate);
+      _euler.set(breathPitch, 0, 0, 'YXZ');
+      _q1.setFromEuler(_euler);
+      this.currentSpineQuat.slerp(_q1, easeRate);
     }
 
     spineNode.quaternion.copy(this.currentSpineQuat);
@@ -270,7 +338,13 @@ export class VRMRetargeter {
     const rightUpper = this.vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.RightUpperArm);
     const rightLower = this.vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.RightLowerArm);
 
-    // Left Arm (User's physical Left: landmarks 11, 13, 15)
+    // Initial bone vectors for normalized VRM humanoid (Left = +X, Right = -X)
+    const armLInitVec = new THREE.Vector3(1, 0, 0);
+    const armRInitVec = new THREE.Vector3(-1, 0, 0);
+    const bendAxisL = new THREE.Vector3(0, 0, 1);
+    const bendAxisR = new THREE.Vector3(0, 0, -1);
+
+    // Left Arm (User's anatomical Left: pose landmarks 11, 13, 15)
     if (
       leftUpper &&
       pose &&
@@ -282,25 +356,24 @@ export class VRMRetargeter {
       const w = mediapipeWorldToThree(pose[15]);
 
       _v1.set(e.x - s.x, e.y - s.y, e.z - s.z).normalize();
-      // Arm initial unit vector matches VRM spec: VRM 1.0 (+1,0,0), VRM 0.x (-1,0,0)
-      _q1.setFromUnitVectors(this.armLInitVec, _v1);
+      _q1.setFromUnitVectors(armLInitVec, _v1);
       this.currentArmL.slerp(_q1, 0.35);
 
       if (leftLower && (pose[15]?.visibility ?? 0) > 0.25) {
         _v2.set(w.x - e.x, w.y - e.y, w.z - e.z).normalize();
         const bendAngle = THREE.MathUtils.clamp(_v1.angleTo(_v2), 0, THREE.MathUtils.degToRad(145));
-        _q2.setFromAxisAngle(this.bendAxisL, bendAngle);
+        _q2.setFromAxisAngle(bendAxisL, bendAngle);
         this.currentForearmL.slerp(_q2, 0.35);
       }
     } else {
-      this.currentArmL.slerp(this.restArmL, easeRate);
+      this.currentArmL.slerp(REST_ARM_L, easeRate);
       this.currentForearmL.slerp(IDENTITY_QUAT, easeRate);
     }
 
     if (leftUpper) leftUpper.quaternion.copy(this.currentArmL);
     if (leftLower) leftLower.quaternion.copy(this.currentForearmL);
 
-    // Right Arm (User's physical Right: landmarks 12, 14, 16)
+    // Right Arm (User's anatomical Right: pose landmarks 12, 14, 16)
     if (
       rightUpper &&
       pose &&
@@ -312,18 +385,17 @@ export class VRMRetargeter {
       const w = mediapipeWorldToThree(pose[16]);
 
       _v1.set(e.x - s.x, e.y - s.y, e.z - s.z).normalize();
-      // Arm initial unit vector matches VRM spec: VRM 1.0 (-1,0,0), VRM 0.x (+1,0,0)
-      _q1.setFromUnitVectors(this.armRInitVec, _v1);
+      _q1.setFromUnitVectors(armRInitVec, _v1);
       this.currentArmR.slerp(_q1, 0.35);
 
       if (rightLower && (pose[16]?.visibility ?? 0) > 0.25) {
         _v2.set(w.x - e.x, w.y - e.y, w.z - e.z).normalize();
         const bendAngle = THREE.MathUtils.clamp(_v1.angleTo(_v2), 0, THREE.MathUtils.degToRad(145));
-        _q2.setFromAxisAngle(this.bendAxisR, bendAngle);
+        _q2.setFromAxisAngle(bendAxisR, bendAngle);
         this.currentForearmR.slerp(_q2, 0.35);
       }
     } else {
-      this.currentArmR.slerp(this.restArmR, easeRate);
+      this.currentArmR.slerp(REST_ARM_R, easeRate);
       this.currentForearmR.slerp(IDENTITY_QUAT, easeRate);
     }
 
@@ -332,9 +404,7 @@ export class VRMRetargeter {
   }
 
   private updateFingers(frame: TrackingFrame | null, easeRate: number): void {
-    // Left Hand (Thumb: metacarpal, proximal, distal; Others: proximal, intermediate, distal)
     this.applyHandFingers(frame?.leftHandWorld, 'Left', easeRate);
-    // Right Hand
     this.applyHandFingers(frame?.rightHandWorld, 'Right', easeRate);
   }
 
@@ -351,7 +421,7 @@ export class VRMRetargeter {
           : [VRMHumanBoneName.RightThumbMetacarpal, VRMHumanBoneName.RightThumbProximal, VRMHumanBoneName.RightThumbDistal],
         indices: [1, 2, 3, 4],
       },
-      // Index: 3 joints (proximal, intermediate, distal) - NO metacarpal
+      // Index: 3 joints (proximal, intermediate, distal)
       {
         bones: isLeft
           ? [VRMHumanBoneName.LeftIndexProximal, VRMHumanBoneName.LeftIndexIntermediate, VRMHumanBoneName.LeftIndexDistal]
@@ -392,11 +462,9 @@ export class VRMRetargeter {
         const curl1 = THREE.MathUtils.clamp(_v1.angleTo(_v2), 0, Math.PI * 0.45);
         const curl2 = THREE.MathUtils.clamp(_v2.angleTo(_v3), 0, Math.PI * 0.45);
 
-        // Store into currentFingerCurls (0-4 for Left, 5-9 for Right)
         const curlIndex = isLeft ? i : i + 5;
         this.currentFingerCurls[curlIndex] = (curl1 + curl2) * 0.5;
 
-        // Apply curls to joints
         const b0 = humanoid.getNormalizedBoneNode(finger.bones[0]);
         const b1 = humanoid.getNormalizedBoneNode(finger.bones[1]);
         const b2 = humanoid.getNormalizedBoneNode(finger.bones[2]);
@@ -445,19 +513,39 @@ export class VRMRetargeter {
       }
     }
 
+    // Natural Spontaneous Blinking (human realism)
+    const now = performance.now();
+    if (targetExprs.blinkLeft > 0.35 || targetExprs.blinkRight > 0.35) {
+      this.lastBlinkTime = now;
+      this.spontaneousBlinkActive = false;
+    } else if (now - this.lastBlinkTime > 3600) {
+      this.spontaneousBlinkActive = true;
+      this.spontaneousBlinkStart = now;
+      this.lastBlinkTime = now + 500;
+    }
+
+    if (this.spontaneousBlinkActive) {
+      const elapsed = now - this.spontaneousBlinkStart;
+      if (elapsed < 160) {
+        const blinkProgress = Math.sin((elapsed / 160) * Math.PI);
+        targetExprs.blinkLeft = Math.max(targetExprs.blinkLeft, blinkProgress);
+        targetExprs.blinkRight = Math.max(targetExprs.blinkRight, blinkProgress);
+      } else {
+        this.spontaneousBlinkActive = false;
+      }
+    }
+
     // Filter and assign blendshape weights
     for (const [key, targetVal] of Object.entries(targetExprs)) {
       const filter = this.expressionFilters.get(key);
       const filtered = filter ? filter.filter(targetVal, timeSec).value : targetVal;
 
       if (!blendshapes || blendshapes.length === 0) {
-        // Easing to 0 on tracking loss
-        this.currentExpressions[key] = THREE.MathUtils.lerp(this.currentExpressions[key], 0, easeRate);
+        this.currentExpressions[key] = THREE.MathUtils.lerp(this.currentExpressions[key], targetVal, easeRate);
       } else {
         this.currentExpressions[key] = filtered;
       }
 
-      // Support VRM 1.0 and VRM 0.x expression naming variations
       exprMgr.setValue(key, this.currentExpressions[key]);
       if (key === 'blinkLeft') exprMgr.setValue('blink_l', this.currentExpressions[key]);
       if (key === 'blinkRight') exprMgr.setValue('blink_r', this.currentExpressions[key]);
@@ -465,8 +553,15 @@ export class VRMRetargeter {
 
     try {
       exprMgr.update();
-    } catch (err) {
-      console.warn('VRM expressionManager update error:', err);
+    } catch {
+      // Defensive suppress on textureless materials
+    }
+  }
+
+  public dispose(): void {
+    if (typeof window !== 'undefined') {
+      if (this.keydownHandler) window.removeEventListener('keydown', this.keydownHandler);
+      if (this.keyupHandler) window.removeEventListener('keyup', this.keyupHandler);
     }
   }
 }

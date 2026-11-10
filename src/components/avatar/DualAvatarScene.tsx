@@ -6,9 +6,11 @@ import * as THREE from 'three';
 import AvatarModel from './AvatarModel';
 import RemoteAvatarModel from './RemoteAvatarModel';
 import WaitingPod from './WaitingPod';
+import WorldEnvironment from '../world/WorldEnvironment';
 import type { TrackingFrame } from '@/lib/tracking/types';
 import type { DecodedMotionPacket, UnencodedMotionState } from '@/lib/webrtc/packet';
 import { type ThemeId, THEMES } from '@/lib/colors';
+import type { WorldId } from '@/lib/world-types';
 
 // Ensure exact 1:1 color mapping without Three.js ColorManagement transformations
 if (typeof window !== 'undefined') {
@@ -122,6 +124,7 @@ interface DualAvatarSceneProps {
   recenterTrigger?: number;
   isWeakConnection?: boolean;
   theme?: ThemeId;
+  worldId?: WorldId;
 }
 
 export default function DualAvatarScene({
@@ -138,6 +141,7 @@ export default function DualAvatarScene({
   recenterTrigger,
   isWeakConnection = false,
   theme = 'classic',
+  worldId = 'cyberGrid',
 }: DualAvatarSceneProps) {
   const [contextLost, setContextLost] = useState(false);
   const [localLoading, setLocalLoading] = useState(true);
@@ -319,6 +323,7 @@ export default function DualAvatarScene({
             >
               <CameraSetup />
               <SceneBackground color={THEMES[theme]?.sceneBg ?? 0x2391ff} />
+              <WorldEnvironment worldId={worldId} theme={theme} />
               {isAuditMode && <PaletteAuditor onResult={setAuditStats} />}
 
               <AvatarModel
@@ -384,6 +389,7 @@ export default function DualAvatarScene({
             >
               <CameraSetup />
               <SceneBackground color={THEMES[theme]?.sceneBg ?? 0x2391ff} />
+              <WorldEnvironment worldId={worldId} theme={theme} />
               {showRemoteAvatar ? (
                 <RemoteAvatarModel
                   vrmUrl={remoteVrmUrl}

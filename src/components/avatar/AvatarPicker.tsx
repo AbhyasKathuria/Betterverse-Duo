@@ -37,6 +37,7 @@ interface AvatarPickerProps {
 
 export default function AvatarPicker({ selectedId, onSelect }: AvatarPickerProps) {
   const [mounted, setMounted] = useState(false);
+  const [customAvatars, setCustomAvatars] = useState<AvatarOption[]>([]);
 
   useEffect(() => {
     setMounted(true);
@@ -62,7 +63,30 @@ export default function AvatarPicker({ selectedId, onSelect }: AvatarPickerProps
     onSelect(avatar);
   };
 
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.toLowerCase().endsWith('.vrm')) {
+      alert('Please select a valid 3D .vrm avatar file.');
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(file);
+    const newAvatar: AvatarOption = {
+      id: `custom-${Date.now()}`,
+      name: file.name.replace(/\.vrm$/i, '').slice(0, 16),
+      vrmUrl: objectUrl,
+      version: 'Custom',
+    };
+
+    setCustomAvatars((prev) => [...prev, newAvatar]);
+    handleSelect(newAvatar);
+  };
+
   if (!mounted) return null;
+
+  const allAvatars = [...AVAILABLE_AVATARS, ...customAvatars];
 
   return (
     <div
@@ -74,7 +98,7 @@ export default function AvatarPicker({ selectedId, onSelect }: AvatarPickerProps
         Avatar:
       </span>
 
-      {AVAILABLE_AVATARS.map((avatar) => {
+      {allAvatars.map((avatar) => {
         const isSelected = avatar.id === selectedId;
 
         return (
@@ -102,6 +126,17 @@ export default function AvatarPicker({ selectedId, onSelect }: AvatarPickerProps
           </button>
         );
       })}
+
+      {/* Upload Custom VRM Button */}
+      <label className="min-h-[44px] px-3 py-2 text-sm font-black uppercase flex items-center gap-1.5 border-4 border-dashed border-amber bg-blue text-yellow hover:border-yellow cursor-pointer">
+        <span>+ Upload .VRM</span>
+        <input
+          type="file"
+          accept=".vrm"
+          onChange={handleFileUpload}
+          className="hidden"
+        />
+      </label>
     </div>
   );
 }

@@ -17,10 +17,8 @@ interface RemoteAvatarModelProps {
   theme?: ThemeId;
 }
 
-const REST_ARM_L_VRM1 = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, -Math.PI * 0.38));
-const REST_ARM_R_VRM1 = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, Math.PI * 0.38));
-const REST_ARM_L_VRM0 = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, Math.PI * 0.38));
-const REST_ARM_R_VRM0 = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, -Math.PI * 0.38));
+const REST_ARM_L = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, -Math.PI * 0.38));
+const REST_ARM_R = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, Math.PI * 0.38));
 const IDENTITY_QUAT = new THREE.Quaternion();
 
 export default function RemoteAvatarModel({
@@ -30,16 +28,17 @@ export default function RemoteAvatarModel({
   theme = 'classic',
 }: RemoteAvatarModelProps) {
   const [vrm, setVrm] = useState<VRM | null>(null);
+  const baseSceneYRef = useRef(0);
 
   // Interpolated bone quaternions
   const currentHead = useRef(new THREE.Quaternion());
   const currentSpine = useRef(new THREE.Quaternion());
-  const currentArmL = useRef(REST_ARM_L_VRM1.clone());
+  const currentArmL = useRef(REST_ARM_L.clone());
   const currentForearmL = useRef(new THREE.Quaternion());
-  const currentArmR = useRef(REST_ARM_R_VRM1.clone());
+  const currentArmR = useRef(REST_ARM_R.clone());
   const currentForearmR = new THREE.Quaternion();
-  const restArmLRef = useRef(REST_ARM_L_VRM1);
-  const restArmRRef = useRef(REST_ARM_R_VRM1);
+  const restArmLRef = useRef(REST_ARM_L);
+  const restArmRRef = useRef(REST_ARM_R);
 
   useEffect(() => {
     let isCancelled = false;
@@ -60,15 +59,26 @@ export default function RemoteAvatarModel({
       loadedVrm = v;
       VRMUtils.rotateVRM0(v);
 
-      const isVrm0 = v.meta?.metaVersion === '0';
-      restArmLRef.current = isVrm0 ? REST_ARM_L_VRM0 : REST_ARM_L_VRM1;
-      restArmRRef.current = isVrm0 ? REST_ARM_R_VRM0 : REST_ARM_R_VRM1;
-      currentArmL.current.copy(restArmLRef.current);
-      currentArmR.current.copy(restArmRRef.current);
+      restArmLRef.current = REST_ARM_L;
+      restArmRRef.current = REST_ARM_R;
+      currentArmL.current.copy(REST_ARM_L);
+      currentArmR.current.copy(REST_ARM_R);
 
       // Apply remote material palette according to selected theme
       applyPaletteMaterials(v, true, theme);
-      v.scene.position.set(0, 0, 0);
+
+      // Calibrate head height so remote avatar is framed waist-up
+      v.scene.updateMatrixWorld(true);
+      const headNode = v.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Head);
+      if (headNode) {
+        const headPos = new THREE.Vector3();
+        headNode.getWorldPosition(headPos);
+        baseSceneYRef.current = 1.35 - headPos.y;
+        v.scene.position.y = baseSceneYRef.current;
+      } else {
+        baseSceneYRef.current = 0;
+        v.scene.position.set(0, 0, 0);
+      }
 
       setVrm(v);
     });
@@ -180,6 +190,10 @@ export default function RemoteAvatarModel({
         if (forearmRNode) forearmRNode.quaternion.copy(currentForearmR);
       }
     }
+
+    // Natural Respiration Breathing Heave for Remote Avatar
+    const breathHeave = Math.sin((performance.now() / 1000) * 1.6) * 0.012;
+    vrm.scene.position.y = baseSceneYRef.current + breathHeave;
 
     try {
       vrm.update(delta);

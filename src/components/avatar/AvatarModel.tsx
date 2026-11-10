@@ -79,9 +79,6 @@ export default function AvatarModel({
         // Apply theme flat palette materials and inverted-hull outline
         applyPaletteMaterials(v, false, theme);
 
-        // Position avatar waist-up centered
-        v.scene.position.set(0, 0, 0);
-
         const retargeter = new VRMRetargeter(v, minCutoff, beta);
         retargeterRef.current = retargeter;
 
@@ -99,6 +96,9 @@ export default function AvatarModel({
 
     return () => {
       isCancelled = true;
+      if (retargeterRef.current) {
+        retargeterRef.current.dispose();
+      }
       if (loadedVrm) {
         VRMUtils.deepDispose(loadedVrm.scene);
       }
@@ -117,7 +117,7 @@ export default function AvatarModel({
   // Recenter trigger
   useEffect(() => {
     if (recenterTrigger && retargeterRef.current) {
-      retargeterRef.current.recenterHead();
+      retargeterRef.current.recenter();
     }
   }, [recenterTrigger]);
 
