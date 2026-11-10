@@ -7,12 +7,14 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { VRMLoaderPlugin, VRMUtils, VRMHumanBoneName } from '@pixiv/three-vrm';
 import type { VRM } from '@pixiv/three-vrm';
 import type { DecodedMotionPacket } from '@/lib/webrtc/packet';
+import type { ThemeId } from '@/lib/colors';
 import { applyPaletteMaterials } from '@/lib/avatar/material-config';
 
 interface RemoteAvatarModelProps {
   vrmUrl: string;
   packetRef: React.MutableRefObject<DecodedMotionPacket | null>;
   isWeakConnection?: boolean;
+  theme?: ThemeId;
 }
 
 const REST_ARM_L_VRM1 = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, -Math.PI * 0.38));
@@ -25,6 +27,7 @@ export default function RemoteAvatarModel({
   vrmUrl,
   packetRef,
   isWeakConnection = false,
+  theme = 'classic',
 }: RemoteAvatarModelProps) {
   const [vrm, setVrm] = useState<VRM | null>(null);
 
@@ -63,8 +66,8 @@ export default function RemoteAvatarModel({
       currentArmL.current.copy(restArmLRef.current);
       currentArmR.current.copy(restArmRRef.current);
 
-      // Apply remote material palette: Hair is Pink, Clothing is Yellow (swapped)
-      applyPaletteMaterials(v, true);
+      // Apply remote material palette according to selected theme
+      applyPaletteMaterials(v, true, theme);
       v.scene.position.set(0, 0, 0);
 
       setVrm(v);
@@ -75,7 +78,14 @@ export default function RemoteAvatarModel({
       if (loadedVrm) VRMUtils.deepDispose(loadedVrm.scene);
       setVrm(null);
     };
-  }, [vrmUrl]);
+  }, [vrmUrl, theme]);
+
+  // Dynamic theme update for currently loaded remote avatar
+  useEffect(() => {
+    if (vrm) {
+      applyPaletteMaterials(vrm, true, theme);
+    }
+  }, [vrm, theme]);
 
   useFrame((_, delta) => {
     if (!vrm) return;

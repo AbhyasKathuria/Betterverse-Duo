@@ -6,6 +6,13 @@
   --color-yellow: #FFF83F;
   --color-amber: #FFCD54;
   --color-pink: #F70063;
+  --color-black: #000000;
+  --color-maroon: #830000;
+  --color-dark-red: #BC0202;
+  --color-red: #FF0000;
+  --color-charcoal: #323232;
+  --color-crimson: #FF1E56;
+  --color-orange: #FFAC41;
 }
 
 :root {

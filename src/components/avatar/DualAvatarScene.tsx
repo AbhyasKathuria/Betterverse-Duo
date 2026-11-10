@@ -8,6 +8,7 @@ import RemoteAvatarModel from './RemoteAvatarModel';
 import WaitingPod from './WaitingPod';
 import type { TrackingFrame } from '@/lib/tracking/types';
 import type { DecodedMotionPacket, UnencodedMotionState } from '@/lib/webrtc/packet';
+import { type ThemeId, THEMES } from '@/lib/colors';
 
 // Ensure exact 1:1 color mapping without Three.js ColorManagement transformations
 if (typeof window !== 'undefined') {
@@ -90,6 +91,14 @@ function RotatingWaitingPod() {
   );
 }
 
+function SceneBackground({ color }: { color: number }) {
+  const { scene } = useThree();
+  useEffect(() => {
+    scene.background = new THREE.Color(color);
+  }, [scene, color]);
+  return null;
+}
+
 function CameraSetup() {
   const { camera } = useThree();
   useEffect(() => {
@@ -112,6 +121,7 @@ interface DualAvatarSceneProps {
   onRenderFps?: (fps: number) => void;
   recenterTrigger?: number;
   isWeakConnection?: boolean;
+  theme?: ThemeId;
 }
 
 export default function DualAvatarScene({
@@ -127,6 +137,7 @@ export default function DualAvatarScene({
   onRenderFps,
   recenterTrigger,
   isWeakConnection = false,
+  theme = 'classic',
 }: DualAvatarSceneProps) {
   const [contextLost, setContextLost] = useState(false);
   const [localLoading, setLocalLoading] = useState(true);
@@ -301,12 +312,13 @@ export default function DualAvatarScene({
               onCreated={({ gl, scene, camera }) => {
                 gl.toneMapping = THREE.NoToneMapping;
                 gl.domElement.addEventListener('webglcontextlost', handleContextLost);
-                scene.background = new THREE.Color(0x2391ff);
+                scene.background = new THREE.Color(THEMES[theme]?.sceneBg ?? 0x2391ff);
                 camera.lookAt(0, 1.25, 0);
               }}
               className="w-full h-full block bg-blue"
             >
               <CameraSetup />
+              <SceneBackground color={THEMES[theme]?.sceneBg ?? 0x2391ff} />
               {isAuditMode && <PaletteAuditor onResult={setAuditStats} />}
 
               <AvatarModel
@@ -317,6 +329,7 @@ export default function DualAvatarScene({
                 recenterTrigger={recenterTrigger}
                 minCutoff={minCutoff}
                 beta={beta}
+                theme={theme}
                 onLoaded={() => {
                   setLocalLoading(false);
                   setLocalError(null);
@@ -364,17 +377,19 @@ export default function DualAvatarScene({
               onCreated={({ gl, scene, camera }) => {
                 gl.toneMapping = THREE.NoToneMapping;
                 gl.domElement.addEventListener('webglcontextlost', handleContextLost);
-                scene.background = new THREE.Color(0x2391ff);
+                scene.background = new THREE.Color(THEMES[theme]?.sceneBg ?? 0x2391ff);
                 camera.lookAt(0, 1.25, 0);
               }}
               className="w-full h-full block bg-blue"
             >
               <CameraSetup />
+              <SceneBackground color={THEMES[theme]?.sceneBg ?? 0x2391ff} />
               {showRemoteAvatar ? (
                 <RemoteAvatarModel
                   vrmUrl={remoteVrmUrl}
                   packetRef={remotePacketRef}
                   isWeakConnection={isWeakConnection}
+                  theme={theme}
                 />
               ) : (
                 <RotatingWaitingPod />

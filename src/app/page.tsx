@@ -1,15 +1,34 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { generateRoomCode, isValidRoomCode, normalizeRoomCode } from '@/lib/room-code';
 import AvatarPicker, { AVAILABLE_AVATARS, type AvatarOption } from '@/components/avatar/AvatarPicker';
+import ThemeSelector from '@/components/theme/ThemeSelector';
+import { type ThemeId, THEMES } from '@/lib/colors';
 
 export default function HomePage() {
   const router = useRouter();
   const [selectedAvatar, setSelectedAvatar] = useState<AvatarOption>(AVAILABLE_AVATARS[0]);
+  const [theme, setTheme] = useState<ThemeId>('classic');
   const [joinInput, setJoinInput] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('betterverse_theme') as ThemeId;
+      if (saved && THEMES[saved]) {
+        setTheme(saved);
+      }
+    } catch {}
+  }, []);
+
+  const handleSelectTheme = (newTheme: ThemeId) => {
+    setTheme(newTheme);
+    try {
+      localStorage.setItem('betterverse_theme', newTheme);
+    } catch {}
+  };
 
   const handleCreateRoom = () => {
     const newCode = generateRoomCode();
@@ -57,20 +76,26 @@ export default function HomePage() {
         </div>
       </header>
 
-      {/* Pre-Room Avatar Selector */}
-      <section className="border-4 border-amber p-4 mb-8 bg-blue flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      {/* Pre-Room Avatar & Theme Selector */}
+      <section className="border-4 border-amber p-4 mb-8 bg-blue flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
         <div>
           <span className="text-amber text-xs font-black uppercase tracking-wider block">
-            Avatar Identity
+            Avatar &amp; Color Style
           </span>
           <span className="text-yellow text-sm font-bold">
-            Select your 3D avatar before entering:
+            Choose your 3D avatar and color palette:
           </span>
         </div>
-        <AvatarPicker
-          selectedId={selectedAvatar.id}
-          onSelect={setSelectedAvatar}
-        />
+        <div className="flex flex-col lg:flex-row lg:items-center gap-4">
+          <AvatarPicker
+            selectedId={selectedAvatar.id}
+            onSelect={setSelectedAvatar}
+          />
+          <ThemeSelector
+            currentTheme={theme}
+            onSelectTheme={handleSelectTheme}
+          />
+        </div>
       </section>
 
       {/* Main Action Section */}

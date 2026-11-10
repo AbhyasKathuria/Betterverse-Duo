@@ -1,28 +1,37 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-// Strict 4-color palette definition
-const ALLOWED_HEX = new Set(['#2391FF', '#FFF83F', '#FFCD54', '#F70063'].map((h) => h.toLowerCase()));
-const ALLOWED_0X = new Set(['0x2391ff', '0xfff83f', '0xffcd54', '0xf70063'].map((h) => h.toLowerCase()));
+// Allowed palette definition: Classic 4 colors + Cyber Crimson & Dark colors
+const ALLOWED_HEX = new Set([
+  '#2391FF', '#FFF83F', '#FFCD54', '#F70063',
+  '#000000', '#830000', '#BC0202', '#FF0000',
+  '#323232', '#FF1E56', '#FFAC41',
+].map((h) => h.toLowerCase()));
+
+const ALLOWED_0X = new Set([
+  '0x2391ff', '0xfff83f', '0xffcd54', '0xf70063',
+  '0x000000', '0x830000', '0xbc0202', '0xff0000',
+  '0x323232', '0xff1e56', '0xffac41',
+].map((h) => h.toLowerCase()));
+
 const ALLOWED_RGB_STRINGS = new Set([
-  'rgb(35, 145, 255)',
-  'rgb(35,145,255)',
-  'rgb(35 145 255)',
-  'rgb(255, 248, 63)',
-  'rgb(255,248,63)',
-  'rgb(255 248 63)',
-  'rgb(255, 205, 84)',
-  'rgb(255,205,84)',
-  'rgb(255 205 84)',
-  'rgb(247, 0, 99)',
-  'rgb(247,0,99)',
-  'rgb(247 0 99)',
+  'rgb(35, 145, 255)', 'rgb(35,145,255)', 'rgb(35 145 255)',
+  'rgb(255, 248, 63)', 'rgb(255,248,63)', 'rgb(255 248 63)',
+  'rgb(255, 205, 84)', 'rgb(255,205,84)', 'rgb(255 205 84)',
+  'rgb(247, 0, 99)', 'rgb(247,0,99)', 'rgb(247 0 99)',
+  'rgb(0, 0, 0)', 'rgb(0,0,0)', 'rgb(0 0 0)',
+  'rgb(131, 0, 0)', 'rgb(131,0,0)', 'rgb(131 0 0)',
+  'rgb(188, 2, 2)', 'rgb(188,2,2)', 'rgb(188 2 2)',
+  'rgb(255, 0, 0)', 'rgb(255,0,0)', 'rgb(255 0 0)',
+  'rgb(50, 50, 50)', 'rgb(50,50,50)', 'rgb(50 50 50)',
+  'rgb(255, 30, 86)', 'rgb(255,30,86)', 'rgb(255 30 86)',
+  'rgb(255, 172, 65)', 'rgb(255,172,65)', 'rgb(255 172 65)',
 ]);
 
 // Named colors strictly forbidden in CSS properties or Tailwind classes
 const FORBIDDEN_NAMED_COLORS = [
-  'black', 'white', 'gray', 'grey', 'slate', 'zinc', 'neutral', 'stone',
-  'red', 'orange', 'green', 'emerald', 'teal', 'cyan', 'sky', 'indigo',
+  'white', 'gray', 'grey', 'slate', 'zinc', 'neutral', 'stone',
+  'green', 'emerald', 'teal', 'cyan', 'sky', 'indigo',
   'violet', 'purple', 'fuchsia', 'rose', 'transparent', 'currentcolor'
 ];
 

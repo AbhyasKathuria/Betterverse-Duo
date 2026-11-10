@@ -4,6 +4,8 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import TrackingView from '@/components/tracking/TrackingView';
 import AvatarPicker, { AVAILABLE_AVATARS, type AvatarOption } from '@/components/avatar/AvatarPicker';
+import ThemeSelector from '@/components/theme/ThemeSelector';
+import { type ThemeId, THEMES } from '@/lib/colors';
 import { DynamicDualAvatarScene } from '@/components/avatar/DynamicDualAvatarScene';
 import AudioControls from '@/components/audio/AudioControls';
 import SharedActivities from '@/components/activity/SharedActivities';
@@ -35,9 +37,24 @@ export default function RoomView({ roomId }: RoomViewProps) {
   const [copied, setCopied] = useState(false);
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [selectedAvatar, setSelectedAvatar] = useState<AvatarOption>(AVAILABLE_AVATARS[0]);
+  const [theme, setTheme] = useState<ThemeId>('classic');
   const [partnerAvatarId, setPartnerAvatarId] = useState<string | null>(null);
   const [recenterTrigger, setRecenterTrigger] = useState(0);
   const [showPip, setShowPip] = useState(true);
+
+  useEffect(() => {
+    try {
+      const savedTheme = localStorage.getItem('betterverse_theme') as ThemeId;
+      if (savedTheme && THEMES[savedTheme]) setTheme(savedTheme);
+    } catch {}
+  }, []);
+
+  const handleSelectTheme = (newTheme: ThemeId) => {
+    setTheme(newTheme);
+    try {
+      localStorage.setItem('betterverse_theme', newTheme);
+    } catch {}
+  };
 
   // WebRTC & Signaling state
   const [partnerPresence, setPartnerPresence] = useState<PeerPresenceState | null>(null);
@@ -508,10 +525,16 @@ export default function RoomView({ roomId }: RoomViewProps) {
       {/* Avatar Picker & Stage Viewport Toolbar */}
       {!roomError && (
         <section className="border-4 border-amber p-3 bg-blue mb-3 flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
-          <AvatarPicker
-            selectedId={selectedAvatar.id}
-            onSelect={handleSelectAvatar}
-          />
+          <div className="flex flex-wrap items-center gap-3">
+            <AvatarPicker
+              selectedId={selectedAvatar.id}
+              onSelect={handleSelectAvatar}
+            />
+            <ThemeSelector
+              currentTheme={theme}
+              onSelectTheme={handleSelectTheme}
+            />
+          </div>
 
           {/* Voice & Spatial Audio Controls */}
           <AudioControls
@@ -554,6 +577,7 @@ export default function RoomView({ roomId }: RoomViewProps) {
             onRenderFps={setAvatarFps}
             recenterTrigger={recenterTrigger}
             isWeakConnection={isWeakConnection}
+            theme={theme}
           />
 
           {/* Floating Tracking PiP Container */}

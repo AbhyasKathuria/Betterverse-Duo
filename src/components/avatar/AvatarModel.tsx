@@ -7,6 +7,7 @@ import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 import type { VRM } from '@pixiv/three-vrm';
 import type { TrackingFrame } from '@/lib/tracking/types';
 import type { UnencodedMotionState } from '@/lib/webrtc/packet';
+import type { ThemeId } from '@/lib/colors';
 import { VRMRetargeter } from '@/lib/avatar/vrm-retarget';
 import { applyPaletteMaterials } from '@/lib/avatar/material-config';
 
@@ -18,6 +19,7 @@ interface AvatarModelProps {
   recenterTrigger?: number;
   minCutoff?: number;
   beta?: number;
+  theme?: ThemeId;
   onLoaded?: () => void;
   onError?: (err: string) => void;
 }
@@ -30,6 +32,7 @@ export default function AvatarModel({
   recenterTrigger,
   minCutoff = 1.0,
   beta = 0.007,
+  theme = 'classic',
   onLoaded,
   onError,
 }: AvatarModelProps) {
@@ -73,8 +76,8 @@ export default function AvatarModel({
         // Ensure both VRM 0.x and 1.0 face the camera
         VRMUtils.rotateVRM0(v);
 
-        // Apply strict 4-color flat palette and inverted-hull Pink outline
-        applyPaletteMaterials(v);
+        // Apply theme flat palette materials and inverted-hull outline
+        applyPaletteMaterials(v, false, theme);
 
         // Position avatar waist-up centered
         v.scene.position.set(0, 0, 0);
@@ -102,7 +105,14 @@ export default function AvatarModel({
       setVrm(null);
       retargeterRef.current = null;
     };
-  }, [vrmUrl, minCutoff, beta, onLoaded, onError]);
+  }, [vrmUrl, minCutoff, beta, theme, onLoaded, onError]);
+
+  // Dynamic theme update for currently loaded avatar
+  useEffect(() => {
+    if (vrm) {
+      applyPaletteMaterials(vrm, false, theme);
+    }
+  }, [vrm, theme]);
 
   // Recenter trigger
   useEffect(() => {

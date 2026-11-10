@@ -4,26 +4,13 @@ import {
   VRMExpressionMaterialColorBind,
 } from '@pixiv/three-vrm';
 import type { VRM } from '@pixiv/three-vrm';
-import { ALLOWED_NUMBERS } from '../colors';
+import { ALLOWED_NUMBERS, type ThemeId, THEMES } from '../colors';
 
-// Strict 4-color palette mapping for local avatar
-export const LOCAL_AVATAR_COLOR_MAP = {
-  skin: ALLOWED_NUMBERS[2],          // Amber: 0xffcd54
-  hair: ALLOWED_NUMBERS[1],          // Yellow: 0xfff83f
-  clothing: ALLOWED_NUMBERS[3],      // Pink: 0xf70063
-  facialFeatures: ALLOWED_NUMBERS[0],// Blue: 0x2391ff
-  outline: ALLOWED_NUMBERS[3],       // Pink: 0xf70063
-} as const;
+// Strict palette mapping for local avatar (default classic)
+export const LOCAL_AVATAR_COLOR_MAP = THEMES.classic.localAvatar;
 
-// Strict 4-color palette mapping for remote partner avatar
-// Hair and Clothing swapped so local and partner avatars are visually distinct
-export const REMOTE_AVATAR_COLOR_MAP = {
-  skin: ALLOWED_NUMBERS[2],          // Amber: 0xffcd54
-  hair: ALLOWED_NUMBERS[3],          // Pink: 0xf70063 (swapped)
-  clothing: ALLOWED_NUMBERS[1],      // Yellow: 0xfff83f (swapped)
-  facialFeatures: ALLOWED_NUMBERS[0],// Blue: 0x2391ff
-  outline: ALLOWED_NUMBERS[3],       // Pink: 0xf70063
-} as const;
+// Strict palette mapping for remote partner avatar (default classic)
+export const REMOTE_AVATAR_COLOR_MAP = THEMES.classic.remoteAvatar;
 
 export type AvatarSlot = keyof typeof LOCAL_AVATAR_COLOR_MAP;
 
@@ -142,9 +129,21 @@ export function sanitizeExpressionBinds(vrm: VRM): void {
   }
 }
 
-export function applyPaletteMaterials(vrm: VRM, isRemote = false): void {
-  const colorMap = isRemote ? REMOTE_AVATAR_COLOR_MAP : LOCAL_AVATAR_COLOR_MAP;
+export function applyPaletteMaterials(vrm: VRM, isRemote = false, themeId: ThemeId = 'classic'): void {
+  const theme = THEMES[themeId] || THEMES.classic;
+  const colorMap = isRemote ? theme.remoteAvatar : theme.localAvatar;
   const meshesToOutline: (THREE.Mesh | THREE.SkinnedMesh)[] = [];
+
+  // Remove existing outlines if any (enables clean runtime theme switching)
+  const existingOutlines: THREE.Object3D[] = [];
+  vrm.scene.traverse((obj) => {
+    if (obj.userData?.isOutline) {
+      existingOutlines.push(obj);
+    }
+  });
+  for (const outline of existingOutlines) {
+    outline.parent?.remove(outline);
+  }
 
   vrm.scene.traverse((obj) => {
     if (obj.userData?.isOutline) return;

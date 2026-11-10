@@ -5,6 +5,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import AvatarModel from './AvatarModel';
 import type { TrackingFrame } from '@/lib/tracking/types';
+import { type ThemeId, THEMES } from '@/lib/colors';
 
 // Ensure exact 1:1 color mapping without Three.js ColorManagement transformations
 if (typeof window !== 'undefined') {
@@ -77,6 +78,14 @@ function PaletteAuditor({ onResult }: { onResult: (stats: AuditStats) => void })
   return null;
 }
 
+function SceneBackground({ color }: { color: number }) {
+  const { scene } = useThree();
+  useEffect(() => {
+    scene.background = new THREE.Color(color);
+  }, [scene, color]);
+  return null;
+}
+
 function CameraSetup() {
   const { camera } = useThree();
   useEffect(() => {
@@ -91,6 +100,7 @@ interface AvatarSceneProps {
   trackingFrameRef: React.MutableRefObject<TrackingFrame | null>;
   onRenderFps?: (fps: number) => void;
   recenterTrigger?: number;
+  theme?: ThemeId;
 }
 
 export default function AvatarScene({
@@ -98,6 +108,7 @@ export default function AvatarScene({
   trackingFrameRef,
   onRenderFps,
   recenterTrigger,
+  theme = 'classic',
 }: AvatarSceneProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -264,12 +275,13 @@ export default function AvatarScene({
           onCreated={({ gl, scene, camera }) => {
             gl.toneMapping = THREE.NoToneMapping;
             gl.domElement.addEventListener('webglcontextlost', handleContextLost);
-            scene.background = new THREE.Color(0x2391ff); // Solid Blue sky
+            scene.background = new THREE.Color(THEMES[theme]?.sceneBg ?? 0x2391ff);
             camera.lookAt(0, 1.25, 0);
           }}
           className="w-full h-full block bg-blue"
         >
           <CameraSetup />
+          <SceneBackground color={THEMES[theme]?.sceneBg ?? 0x2391ff} />
           {isAuditMode && <PaletteAuditor onResult={setAuditStats} />}
 
           <AvatarModel
@@ -279,6 +291,7 @@ export default function AvatarScene({
             recenterTrigger={recenterTrigger}
             minCutoff={minCutoff}
             beta={beta}
+            theme={theme}
             onLoaded={() => {
               setIsLoading(false);
               setLoadError(null);
